@@ -8,7 +8,6 @@ const els = {
   weight: $('weight'),
   bgColor: $('bgColor'),
   textColor: $('textColor'),
-  animate: $('animateTitle'),
   size: $('size'),
   sizeVal: $('sizeVal'),
   modeRadios: document.querySelectorAll('input[name="mode"]'),
@@ -16,8 +15,9 @@ const els = {
   imgBlock: $('img-block'),
   videoBlock: $('video-block'),
   animateBlock: $('animate-block'),
-  animateDirWrap: $('animate-dir'),
-  animateDir: $('animateDir'),
+  effect: $('effect'),
+  effectDirWrap: $('effect-dir'),
+  effectDir: $('effectDir'),
   duration: $('duration'),
   durVal: $('durVal'),
   fpsVal: $('fpsVal'),
@@ -67,8 +67,8 @@ function state() {
     weight: els.weight.value,
     bg: els.bgColor.value,
     fg: els.textColor.value,
-    animate: els.animate.checked,
-    direction: els.animateDir.value,
+    effect: els.effect.value,
+    direction: els.effectDir.value,
     sizeFactor: Number(els.size.value) / 100,
   };
 }
@@ -166,8 +166,30 @@ const FLY_DIRECTIONS = {
   'bottom-right': { dx: 0.6, dy: 0.6 },
 };
 
-// progress goes 0→1; at 0 the text sits at the fly-in start position, at 1 it is centered.
-function draw(ctx, W, H, s, progress = 1) {
+const clamp01 = (t) => (t < 0 ? 0 : t > 1 ? 1 : t);
+const easeInOutSine = (t) => -(Math.cos(Math.PI * t) - 1) / 2;
+
+function withShadow(ctx, big) {
+  ctx.shadowColor = 'rgba(0,0,0,0.35)';
+  ctx.shadowBlur = big ? 8 : 4;
+  ctx.shadowOffsetX = big ? 2 : 1;
+  ctx.shadowOffsetY = big ? 3 : 2;
+}
+
+// Draw one line of text at (x, y) with alpha (0-1) and a font size in px.
+function drawLine(ctx, line, x, y, alpha, fontPx, color) {
+  if (!line || alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, Math.max(0, alpha));
+  ctx.font = fontString(fontPx);
+  withShadow(ctx, fontPx >= 64);
+  ctx.fillStyle = color;
+  ctx.fillText(line, x, y);
+  ctx.restore();
+}
+
+// t is the animation time in ms since the start (0 = first frame).
+function draw(ctx, W, H, s, t = 0) {
   ctx.clearRect(0, 0, W, H);
   ctx.fillStyle = s.bg;
   ctx.fillRect(0, 0, W, H);
@@ -177,60 +199,93 @@ function draw(ctx, W, H, s, progress = 1) {
 
   const { size, lineHeight, lines, hasAuthor, authorSize, authorGap } = computeLayout(ctx, W, H, s);
 
-  const anim = progress !== undefined && progress < 1 ? 1 - easeOutCubic(progress) : 0;
-  let dir = FLY_DIRECTIONS.bottom;
-  if (s.direction) {
+  // Vertical layout: y is the baseline of the first title line.
+  const blockH = lines.length * lineHeight + (hasAuthor ? authorGap + authorSize * 1.25 : 0);
+  let y = (H - blockH) / 2 + lineHeight / 2;
+  const subY = y + lines.length * lineHeight + authorGap / 2;
+
+  // Shared shadow settings for title and subtitle text.
+  const fg = s.fg;
+
+  if ((s.effect || 'none') === 'moving') {
+    const a = easeInOutSine(clamp01(t / 900));
+    const sa = easeInOutSine(clamp01((t - 600) / 800));
+
+    // Two large translucent copies of the title scroll across the background
+    // (upper and lower), like the old Windows Movie Maker cards.
+    const title = (s.title || '').trim();
+    if (title) {
+      ctx.save();
+      const gsize = H * 0.42;
+      ctx.font = fontString(gsize);
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = fg;
+      const tw = Math.max(1, ctx.measureText(title).width);
+      const unit = tw + Math.max(60, W * 0.06); // spacing between repeats (seamless tiling)
+      const speed = W * 0.05;                   // px per second
+
+      const scroll = (gy, off, alpha, dir) => {
+        ctx.globalAlpha = alpha;
+        if (dir > 0) {
+          for (let x = -unit + off; x < W + unit; x += unit) ctx.fillText(title, x, gy);
+        } else {
+          for (let x = W + unit - off; x > -unit; x -= unit) ctx.fillText(title, x, gy);
+        }
+      };
+      scroll(H * 0.33, ((t / 1000) * speed) % unit, 0.13, +1);
+      scroll(H * 0.73, ((t / 1000) * speed * 1.18) % unit, 0.11, -1);
+      ctx.restore();
+    }
+
+    // Foreground: the real title + subtitle, stationary, fading in.
+    lines.forEach((line) => {
+      drawLine(ctx, line, W / 2, y, a, size, fg);
+      y += lineHeight;
+    });
+    if (hasAuthor) drawLine(ctx, s.author, W / 2, subY, sa, authorSize, fg);
+    return;
+  }
+
+  if ((s.effect || 'none') === 'fly-in') {
+    const p = clamp01(t / 1000);
+    const anim = 1 - easeOutCubic(p);
+    let dir = FLY_DIRECTIONS.bottom;
     const d = FLY_DIRECTIONS[s.direction];
     if (d) dir = d;
-  }
-  const cx = W / 2 + anim * dir.dx * W;
-  const cy = H / 2 + anim * dir.dy * H;
+    const cx = W / 2 + anim * dir.dx * W;
+    const cy = H / 2 + anim * dir.dy * H;
+    const off = cy - H / 2;
 
-  // Vertical layout (shifted by the fly-in vertical offset)
-  const blockH = lines.length * lineHeight + (hasAuthor ? authorGap + authorSize * 1.25 : 0);
-  let y = (H - blockH) / 2 + lineHeight / 2 + (cy - H / 2);
-
-  // Main title lines with a subtle dark drop shadow
-  if (lines.length) {
-    ctx.save();
-    ctx.font = fontString(size);
-    ctx.shadowColor = 'rgba(0,0,0,0.35)';
-    ctx.shadowBlur = Math.max(2, size * 0.05);
-    ctx.shadowOffsetX = Math.max(1, size * 0.012);
-    ctx.shadowOffsetY = Math.max(1, size * 0.02);
-      ctx.fillStyle = s.fg;
-      for (const line of lines) {
-        ctx.fillText(line, cx, y);
-        y += lineHeight;
-      }
-      ctx.restore();
+    lines.forEach((line) => {
+      drawLine(ctx, line, cx, y + off, 1, size, fg);
+      y += lineHeight;
+    });
+    if (hasAuthor) drawLine(ctx, s.author, cx, subY + off, 1, authorSize, fg);
+    return;
   }
 
-  // Author line
-  if (hasAuthor) {
-    const ay = y + authorGap / 2;
-    ctx.save();
-    ctx.font = fontString(authorSize);
-    ctx.shadowColor = 'rgba(0,0,0,0.30)';
-    ctx.shadowBlur = Math.max(1, authorSize * 0.05);
-    ctx.shadowOffsetY = Math.max(1, authorSize * 0.02);
-      ctx.fillStyle = s.fg;
-      ctx.fillText(s.author, cx, ay);
-      ctx.restore();
-  }
+  // No animation: static centered card.
+  lines.forEach((line) => {
+    drawLine(ctx, line, W / 2, y, 1, size, fg);
+    y += lineHeight;
+  });
+  if (hasAuthor) drawLine(ctx, s.author, W / 2, subY, 1, authorSize, fg);
 }
 
 /* ------------------------------------------------------------------ */
 /* Preview                                                             */
 /* ------------------------------------------------------------------ */
 let previewRaf = 0;
+let previewRunning = false;
 function stopPreviewLoop() {
+  previewRunning = false;
   if (previewRaf) cancelAnimationFrame(previewRaf);
   previewRaf = 0;
 }
 
-const PREVIEW_LOOP_MS = 2200; // full fly-in + hold cycle for the preview
 function previewStep(now) {
+  if (!previewRunning) return;
   const st = state();
   const { w, h } = currentResolution();
   if (els.canvas.width !== w) els.canvas.width = w;
@@ -238,19 +293,23 @@ function previewStep(now) {
   els.resReadout.textContent = `${w} × ${h}`;
   const ctx = els.canvas.getContext('2d');
 
-  // fly-in over the first ~1s, hold, then loop so the preview always shows motion
-  const FLY = 1000;
-  const t = (now - loopStart) % PREVIEW_LOOP_MS;
-  const p = Math.min(t / FLY, 1);
-  draw(ctx, w, h, st, p);
-  if (els.animate.checked && currentMode() === 'video') previewRaf = requestAnimationFrame(previewStep);
+  // Show the animation from the start; for moving titles it keeps running
+  // (the motion is perpetual), for fly-in it settles and holds.
+  const t = now - loopStart;
+  draw(ctx, w, h, st, t);
+  previewRaf = requestAnimationFrame(previewStep);
 }
 
 let loopStart = 0;
 function startPreviewLoop() {
   stopPreviewLoop();
+  previewRunning = true;
   loopStart = performance.now();
   previewRaf = requestAnimationFrame(previewStep);
+}
+
+function animationActive() {
+  return currentMode() === 'video' && els.effect.value !== 'none';
 }
 
 function renderPreview() {
@@ -259,11 +318,12 @@ function renderPreview() {
   if (els.canvas.height !== h) els.canvas.height = h;
   els.resReadout.textContent = `${w} × ${h}`;
   const ctx = els.canvas.getContext('2d');
-  if (els.animate.checked && currentMode() === 'video') {
+  if (animationActive()) {
     startPreviewLoop();
   } else {
     stopPreviewLoop();
-    draw(ctx, w, h, state());
+    // Static card: fly-in shown fully landed, moving shown settled.
+    draw(ctx, w, h, state(), els.effect.value === 'fly-in' ? 1000 : 9000);
   }
 }
 
@@ -370,12 +430,9 @@ async function exportVideo() {
     const totalFrames = Math.max(1, Math.round(duration * fps));
     const dt = 1 / fps;
     const s = state();
-    const FLY_SECONDS = 1; // the text flies in over the first ~second
-    const animate = els.animate.checked && currentMode() === 'video';
     for (let i = 0; i < totalFrames; i++) {
       const t = (i * dt) / 1; // presentation timestamp in seconds
-      const progress = animate ? Math.min(t / FLY_SECONDS, 1) : 1; // 0 at start → 1 once landed
-      draw(ctx, w, h, s, progress);
+      draw(ctx, w, h, s, t * 1000); // animation time in ms
       setStatus(`Encoding video… ${Math.round(((i + 1) / totalFrames) * 100)}%`, '');
       await source.add(t, dt);
       await new Promise((r) => requestAnimationFrame(r)); // let the status paint
@@ -405,7 +462,7 @@ function updateModeSections() {
   els.imgBlock.hidden = mode !== 'image';
   els.videoBlock.hidden = mode !== 'video';
   els.animateBlock.hidden = mode !== 'video';
-  els.animateDirWrap.hidden = !els.animate.checked || mode !== 'video';
+  els.effectDirWrap.hidden = els.effect.value !== 'fly-in';
 }
 
 function updateResolutionUI() {
@@ -457,8 +514,8 @@ const liveInputs = [
 liveInputs.forEach((el) => {
   el.addEventListener('input', onAnyUI);
 });
-  els.animate.addEventListener('change', onAnyUI);
-  els.animateDir.addEventListener('change', onAnyUI);
+els.effect.addEventListener('change', onAnyUI);
+els.effectDir.addEventListener('change', onAnyUI);
 els.resPreset.addEventListener('change', onAnyUI);
 els.modeRadios.forEach((r) => r.addEventListener('change', onAnyUI));
 

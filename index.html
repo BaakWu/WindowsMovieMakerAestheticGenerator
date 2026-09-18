@@ -104,14 +104,16 @@
             </div>
           </div>
 
-          <div class="field row-check" id="animate-block">
-            <label class="check">
-              <input id="animateTitle" type="checkbox" />
-              <span>Animate title fly-in</span>
-            </label>
-            <div class="animate-block__dir" id="animate-dir">
-              <label for="animateDir">Direction</label>
-              <select id="animateDir">
+          <div class="field" id="animate-block">
+            <label for="effect">Animation</label>
+            <select id="effect">
+              <option value="none" selected>None</option>
+              <option value="fly-in">Title fly-in</option>
+              <option value="moving">Moving titles (scrolling background)</option>
+            </select>
+            <div class="animate-block__dir" id="effect-dir">
+              <label for="effectDir">Fly-in direction</label>
+              <select id="effectDir">
                 <option value="bottom" selected>From bottom</option>
                 <option value="bottom-left">From bottom-left</option>
                 <option value="bottom-right">From bottom-right</option>
