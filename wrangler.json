@@ -1,0 +1,17 @@
+{
+  "name": "windows-movie-maker-aesthetic-generator",
+  "compatibility_date": "2026-09-18",
+  "assets": {
+    "directory": ".",
+    "exclude": [
+      ".git/**",
+      ".github/**",
+      ".gitignore",
+      "node_modules/**",
+      "wrangler.json",
+      "wrangler.toml",
+      "README.md",
+      "LICENSE"
+    ]
+  }
+}

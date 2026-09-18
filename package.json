@@ -1,0 +1,7 @@
+{
+  "name": "windows-movie-maker-aesthetic-generator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Classic Windows Movie Maker / Old YouTube title cards: image or client-side encoded MP4, fully in the browser."
+}

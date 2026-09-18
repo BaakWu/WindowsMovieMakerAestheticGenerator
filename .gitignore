@@ -1,0 +1,8 @@
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+
+# Local scratch / build output
+*.tmp
+node_modules/
+dist/
