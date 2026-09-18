@@ -16,6 +16,8 @@ const els = {
   imgBlock: $('img-block'),
   videoBlock: $('video-block'),
   animateBlock: $('animate-block'),
+  animateDirWrap: $('animate-dir'),
+  animateDir: $('animateDir'),
   duration: $('duration'),
   durVal: $('durVal'),
   fpsVal: $('fpsVal'),
@@ -66,6 +68,7 @@ function state() {
     bg: els.bgColor.value,
     fg: els.textColor.value,
     animate: els.animate.checked,
+    direction: els.animateDir.value,
     sizeFactor: Number(els.size.value) / 100,
   };
 }
@@ -152,7 +155,18 @@ function easeOutCubic(p) {
   return 1 - Math.pow(1 - p, 3);
 }
 
-// progress goes 0→1; when 0 the text sits at the top-left, at 1 it is centered.
+const FLY_DIRECTIONS = {
+  'top-left': { dx: -0.6, dy: -0.6 },
+  top: { dx: 0, dy: -0.9 },
+  'top-right': { dx: 0.6, dy: -0.6 },
+  left: { dx: -0.9, dy: 0 },
+  right: { dx: 0.9, dy: 0 },
+  'bottom-left': { dx: -0.6, dy: 0.6 },
+  bottom: { dx: 0, dy: 0.9 },
+  'bottom-right': { dx: 0.6, dy: 0.6 },
+};
+
+// progress goes 0→1; at 0 the text sits at the fly-in start position, at 1 it is centered.
 function draw(ctx, W, H, s, progress = 1) {
   ctx.clearRect(0, 0, W, H);
   ctx.fillStyle = s.bg;
@@ -164,12 +178,17 @@ function draw(ctx, W, H, s, progress = 1) {
   const { size, lineHeight, lines, hasAuthor, authorSize, authorGap } = computeLayout(ctx, W, H, s);
 
   const anim = progress !== undefined && progress < 1 ? 1 - easeOutCubic(progress) : 0;
-  const cx = W / 2 - anim * W * 0.5;
-  const cy = H / 2 - anim * H * 0.5;
+  let dir = FLY_DIRECTIONS.bottom;
+  if (s.direction) {
+    const d = FLY_DIRECTIONS[s.direction];
+    if (d) dir = d;
+  }
+  const cx = W / 2 + anim * dir.dx * W;
+  const cy = H / 2 + anim * dir.dy * H;
 
-  // Vertical layout
+  // Vertical layout (shifted by the fly-in vertical offset)
   const blockH = lines.length * lineHeight + (hasAuthor ? authorGap + authorSize * 1.25 : 0);
-  let y = (H - blockH) / 2 + lineHeight / 2;
+  let y = (H - blockH) / 2 + lineHeight / 2 + (cy - H / 2);
 
   // Main title lines with a subtle dark drop shadow
   if (lines.length) {
@@ -386,6 +405,7 @@ function updateModeSections() {
   els.imgBlock.hidden = mode !== 'image';
   els.videoBlock.hidden = mode !== 'video';
   els.animateBlock.hidden = mode !== 'video';
+  els.animateDirWrap.hidden = !els.animate.checked || mode !== 'video';
 }
 
 function updateResolutionUI() {
@@ -437,7 +457,8 @@ const liveInputs = [
 liveInputs.forEach((el) => {
   el.addEventListener('input', onAnyUI);
 });
-els.animate.addEventListener('change', onAnyUI);
+  els.animate.addEventListener('change', onAnyUI);
+  els.animateDir.addEventListener('change', onAnyUI);
 els.resPreset.addEventListener('change', onAnyUI);
 els.modeRadios.forEach((r) => r.addEventListener('change', onAnyUI));
 
