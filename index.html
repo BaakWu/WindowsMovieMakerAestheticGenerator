@@ -124,6 +124,12 @@
                 <option value="top-right">From top-right</option>
               </select>
             </div>
+            <div class="animate-block__dir" id="effect-fadeout">
+              <label class="check">
+                <input id="fadeOut" type="checkbox" />
+                <span>Fade all text out at the end</span>
+              </label>
+            </div>
           </div>
         </div>
 
@@ -168,6 +174,11 @@
         <div class="preview__frame">
           <video id="previewVideo" controls playsinline muted autoplay loop hidden></video>
           <canvas id="canvas" width="1920" height="1080"></canvas>
+          <div id="progress" class="preview__progress" hidden>
+            <span class="preview__progress-label">Rendering preview…</span>
+            <span id="progressValue" class="preview__progress-value">0%</span>
+            <div class="preview__progress-bar"><div id="progressBar" class="preview__progress-fill"></div></div>
+          </div>
         </div>
         <div class="preview__meta">
           <span id="resReadout">1920 × 1080</span>

@@ -18,6 +18,8 @@ const els = {
   effect: $('effect'),
   effectDirWrap: $('effect-dir'),
   effectDir: $('effectDir'),
+  fadeOutWrap: $('effect-fadeout'),
+  fadeOut: $('fadeOut'),
   duration: $('duration'),
   durVal: $('durVal'),
   fpsVal: $('fpsVal'),
@@ -31,6 +33,10 @@ const els = {
   status: $('status'),
   canvas: $('canvas'),
   previewVideo: $('previewVideo'),
+  progress: $('progress'),
+  progressLabel: document.querySelector('.preview__progress-label'),
+  progressBar: $('progressBar'),
+  progressValue: $('progressValue'),
   webcodecs: $('webcodecs-support'),
 };
 
@@ -70,6 +76,8 @@ function state() {
     fg: els.textColor.value,
     effect: els.effect.value,
     direction: els.effectDir.value,
+    fadeOut: els.fadeOut.checked,
+    duration: previewDuration(),
     sizeFactor: Number(els.size.value) / 100,
   };
 }
@@ -190,7 +198,9 @@ function drawLine(ctx, line, x, y, alpha, fontPx, color) {
 }
 
 // t is the animation time in ms since the start (0 = first frame).
-function draw(ctx, W, H, s, t = 0) {
+// total is the full animation length in ms (used for the fade-out phase).
+function draw(ctx, W, H, s, t = 0, total) {
+  total = (total == null) ? s.duration * 1000 : total;
   ctx.clearRect(0, 0, W, H);
   ctx.fillStyle = s.bg;
   ctx.fillRect(0, 0, W, H);
@@ -209,11 +219,19 @@ function draw(ctx, W, H, s, t = 0) {
   const fg = s.fg;
 
   if ((s.effect || 'none') === 'moving') {
-    const a = easeInOutSine(clamp01(t / 900));
-    const sa = easeInOutSine(clamp01((t - 600) / 800));
+    // Moving titles: a big translucent copy of the title scrolls across the
+    // background (upper and lower) while the real title + subtitle sit in the
+    // center. All of it fades in at the start, and (optionally) fades out at
+    // the end.
+    const FADE_IN = 900; // ms for the initial fade-in
+    const FADE_OUT = 1000; // ms for the final fade-out
 
-    // Two large translucent copies of the title scroll across the background
-    // (upper and lower), like the old Windows Movie Maker cards.
+    const fadeIn = easeInOutSine(clamp01(t / FADE_IN));
+    const fadeOutFactor = s.fadeOut ? easeInOutSine(clamp01((total - t) / FADE_OUT)) : 1;
+    const master = fadeIn * fadeOutFactor; // 0 → 1 → 0
+
+    // Two large translucent copies scroll across the background (upper/lower),
+    // each fading in with the card and fading out with it.
     const title = (s.title || '').trim();
     if (title) {
       ctx.save();
@@ -227,6 +245,7 @@ function draw(ctx, W, H, s, t = 0) {
       const speed = W * 0.05;                   // px per second
 
       const scroll = (gy, off, alpha, dir) => {
+        if (alpha <= 0) return;
         ctx.globalAlpha = alpha;
         if (dir > 0) {
           for (let x = -unit + off; x < W + unit; x += unit) ctx.fillText(title, x, gy);
@@ -234,17 +253,17 @@ function draw(ctx, W, H, s, t = 0) {
           for (let x = W + unit - off; x > -unit; x -= unit) ctx.fillText(title, x, gy);
         }
       };
-      scroll(H * 0.33, ((t / 1000) * speed) % unit, 0.13, +1);
-      scroll(H * 0.73, ((t / 1000) * speed * 1.18) % unit, 0.11, -1);
+      scroll(H * 0.33, ((t / 1000) * speed) % unit, 0.13 * master, +1);
+      scroll(H * 0.73, ((t / 1000) * speed * 1.18) % unit, 0.11 * master, -1);
       ctx.restore();
     }
 
-    // Foreground: the real title + subtitle, stationary, fading in.
+    // Foreground: the real title + subtitle, stationary, riding the master alpha.
     lines.forEach((line) => {
-      drawLine(ctx, line, W / 2, y, a, size, fg);
+      drawLine(ctx, line, W / 2, y, master, size, fg);
       y += lineHeight;
     });
-    if (hasAuthor) drawLine(ctx, s.author, W / 2, subY, sa, authorSize, fg);
+    if (hasAuthor) drawLine(ctx, s.author, W / 2, subY, master, authorSize, fg);
     return;
   }
 
@@ -292,7 +311,7 @@ function videoFingerprint() {
   return [
     w, h, currentMode(),
     s.title, s.author, s.font, s.weight, s.bg, s.fg,
-    s.effect, s.direction, Math.round(s.sizeFactor * 1000),
+    s.effect, s.direction, s.fadeOut ? 1 : 0, Math.round(s.sizeFactor * 1000),
     previewDuration(), previewFps(),
   ].join('|');
 }
@@ -321,7 +340,21 @@ function showVideo(url, blob, meta) {
 
 function showCanvas() {
   revokeCurrentVideo();
+  hideProgress();
   els.canvas.hidden = false;
+}
+
+function showProgress(pct) {
+  const rounded = Math.max(0, Math.min(1, pct));
+  els.progress.hidden = false;
+  els.progressBar.style.width = (rounded * 100) + '%';
+  els.progressValue.textContent = Math.round(rounded * 100) + '%';
+}
+
+function hideProgress() {
+  els.progress.hidden = true;
+  els.progressBar.style.width = '0%';
+  els.progressValue.textContent = '0%';
 }
 
 async function buildPreviewVideo() {
@@ -329,24 +362,31 @@ async function buildPreviewVideo() {
   const { w, h } = currentResolution();
   const duration = previewDuration();
   const fps = previewFps();
+  els.download.disabled = true;
+  els.progressLabel.textContent = 'Rendering preview…';
+  showProgress(0);
   setStatus(`Rendering video preview… 0%`, '');
   try {
     const blob = await buildVideo({
       w, h, duration, fps,
       progress: (p) => {
-        if (seq === videoBuildSeq) {
-          setStatus(`Rendering video preview… ${Math.round(p * 100)}%`, '');
-        }
+        if (seq !== videoBuildSeq) return;
+        showProgress(p);
+        setStatus(`Rendering video preview… ${Math.round(p * 100)}%`, '');
       },
     });
     if (seq !== videoBuildSeq) return; // stale — a newer rebuild superseded us
     const url = URL.createObjectURL(blob);
     showVideo(url, blob, videoFingerprint());
+    hideProgress();
     setStatus(`Live preview ready: ${w}×${h}, ${duration}s, ${fps}fps .mp4`, 'ok');
   } catch (err) {
     if (seq !== videoBuildSeq) return;
+    hideProgress();
     showCanvas();
     friendlyVideoError(err);
+  } finally {
+    els.download.disabled = false;
   }
 }
 
@@ -366,13 +406,13 @@ function renderPreview() {
 
   // Always keep a settled frame painted on the canvas so there's something
   // visible behind the video (during encode, on failure, and in image mode).
-  const settledT =
-    els.effect.value === 'fly-in' ? 1000 :
-    els.effect.value === 'moving' ? 9000 : 0;
+  // Settle the preview frame at the midpoint so the text is fully visible
+  // (fade-in complete, fade-out not yet started).
+  const dur = previewDuration() * 1000;
   if (els.canvas.width !== w) els.canvas.width = w;
   if (els.canvas.height !== h) els.canvas.height = h;
   const ctx = els.canvas.getContext('2d');
-  draw(ctx, w, h, state(), settledT);
+  draw(ctx, w, h, state(), dur / 2, dur);
 
   if (isVideoMode()) {
     // Video mode: keep the settled canvas showing until a fresh .mp4 is ready.
@@ -505,12 +545,16 @@ async function exportVideo() {
     // Reuse the already-rendered preview if it matches the current settings.
     let blob = (currentVideoMeta === videoFingerprint()) ? currentVideoBlob : null;
     if (!blob) {
-      blob = await buildVideo({ w, h, duration, fps, progress: (p) => setStatus(`Encoding video… ${Math.round(p * 100)}%`, '') });
+      els.progressLabel.textContent = 'Saving video…';
+      showProgress(0);
+      blob = await buildVideo({ w, h, duration, fps, progress: (p) => { showProgress(p); setStatus(`Encoding video… ${Math.round(p * 100)}%`, ''); } });
+      hideProgress();
     }
     downloadBlob(blob, `${MEDIA_ID}-${slug(state().title)}-${w}x${h}-${duration}s.mp4`);
     setStatus(`Video saved: ${w}×${h}, ${duration}s, ${fps}fps .mp4`, 'ok');
   } catch (err) {
     console.error(err);
+    hideProgress();
     friendlyVideoError(err);
   } finally {
     els.download.disabled = false;
@@ -545,6 +589,7 @@ function updateModeSections() {
   els.videoBlock.hidden = mode !== 'video';
   els.animateBlock.hidden = mode !== 'video';
   els.effectDirWrap.hidden = els.effect.value !== 'fly-in';
+  els.fadeOutWrap.hidden = els.effect.value !== 'moving';
 }
 
 function updateResolutionUI() {
@@ -598,6 +643,7 @@ liveInputs.forEach((el) => {
 });
 els.effect.addEventListener('change', onAnyUI);
 els.effectDir.addEventListener('change', onAnyUI);
+els.fadeOut.addEventListener('change', onAnyUI);
 els.resPreset.addEventListener('change', onAnyUI);
 els.modeRadios.forEach((r) => r.addEventListener('change', onAnyUI));
 
