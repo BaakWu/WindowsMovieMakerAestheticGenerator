@@ -17,12 +17,12 @@
       <section class="controls" aria-label="Controls">
         <div class="field">
           <label for="title">Title text</label>
-          <textarea id="title" rows="3" placeholder="e.g.&#10;My Favorite&#10;Compilations">My Favorite Compilations</textarea>
+          <textarea id="title" rows="3" placeholder="e.g.&#10;Your&#10;Title Here">Your Title Here</textarea>
         </div>
 
         <div class="field">
           <label for="author">Author / subtitle line <span class="hint">(optional)</span></label>
-          <input id="author" type="text" placeholder="e.g. By PrincessZelda123" value="By PrincessZelda123" />
+          <input id="author" type="text" placeholder="e.g. Your subtitle here" value="Your subtitle here" />
         </div>
 
         <div class="grid2">
@@ -106,11 +106,8 @@
               <input id="duration" type="range" min="1" max="10" value="5" />
             </div>
             <div class="field">
-              <label for="fps">Frame rate</label>
-              <select id="fps">
-                <option value="24">24 fps</option>
-                <option value="30" selected>30 fps</option>
-              </select>
+              <label for="fps">Frame rate <span class="hint">(<span id="fpsVal">30</span> fps, max 60)</span></label>
+              <input id="fps" type="range" min="10" max="60" value="30" />
             </div>
           </div>
         </div>

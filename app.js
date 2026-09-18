@@ -17,6 +17,7 @@ const els = {
   videoBlock: $('video-block'),
   duration: $('duration'),
   durVal: $('durVal'),
+  fpsVal: $('fpsVal'),
   fps: $('fps'),
   resPreset: $('resPreset'),
   customRes: $('custom-res'),
@@ -361,6 +362,7 @@ function updateResolutionUI() {
 function onAnyUI() {
   els.sizeVal.textContent = els.size.value;
   els.durVal.textContent = els.duration.value;
+  els.fpsVal.textContent = els.fps.value;
   updateModeSections();
   updateResolutionUI();
   renderPreview();

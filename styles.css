@@ -84,6 +84,8 @@ input[type="color"] {
 
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 
+[hidden] { display: none !important; }
+
 .color-row { display: flex; align-items: center; gap: 10px; }
 .swatches { display: flex; gap: 6px; }
 .swatch {
