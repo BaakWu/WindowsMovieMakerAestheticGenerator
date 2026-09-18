@@ -8,13 +8,14 @@ const els = {
   weight: $('weight'),
   bgColor: $('bgColor'),
   textColor: $('textColor'),
-  faded: $('fadedBgtxt'),
+  animate: $('animateTitle'),
   size: $('size'),
   sizeVal: $('sizeVal'),
   modeRadios: document.querySelectorAll('input[name="mode"]'),
   imgFormat: $('imgFormat'),
   imgBlock: $('img-block'),
   videoBlock: $('video-block'),
+  animateBlock: $('animate-block'),
   duration: $('duration'),
   durVal: $('durVal'),
   fpsVal: $('fpsVal'),
@@ -64,7 +65,7 @@ function state() {
     weight: els.weight.value,
     bg: els.bgColor.value,
     fg: els.textColor.value,
-    faded: els.faded.checked,
+    animate: els.animate.checked,
     sizeFactor: Number(els.size.value) / 100,
   };
 }
@@ -147,7 +148,12 @@ function computeLayout(ctx, W, H, s) {
 /* ------------------------------------------------------------------ */
 /* Rendering (shared by preview, image and video)                     */
 /* ------------------------------------------------------------------ */
-function draw(ctx, W, H, s) {
+function easeOutCubic(p) {
+  return 1 - Math.pow(1 - p, 3);
+}
+
+// progress goes 0→1; when 0 the text sits at the top-left, at 1 it is centered.
+function draw(ctx, W, H, s, progress = 1) {
   ctx.clearRect(0, 0, W, H);
   ctx.fillStyle = s.bg;
   ctx.fillRect(0, 0, W, H);
@@ -157,18 +163,9 @@ function draw(ctx, W, H, s) {
 
   const { size, lineHeight, lines, hasAuthor, authorSize, authorGap } = computeLayout(ctx, W, H, s);
 
-  // Faded oversized background layer (the "aesthetics" look)
-  if (s.faded && s.title) {
-    const longest = lines.reduce((a, b) => (b.length > a.length ? b : a), '');
-    if (longest) {
-      ctx.save();
-      ctx.globalAlpha = 0.18;
-      ctx.fillStyle = s.fg;
-      ctx.font = fontString(H * 1.35);
-      ctx.fillText(longest, W / 2, H / 2);
-      ctx.restore();
-    }
-  }
+  const anim = progress !== undefined && progress < 1 ? 1 - easeOutCubic(progress) : 0;
+  const cx = W / 2 - anim * W * 0.5;
+  const cy = H / 2 - anim * H * 0.5;
 
   // Vertical layout
   const blockH = lines.length * lineHeight + (hasAuthor ? authorGap + authorSize * 1.25 : 0);
@@ -182,12 +179,12 @@ function draw(ctx, W, H, s) {
     ctx.shadowBlur = Math.max(2, size * 0.05);
     ctx.shadowOffsetX = Math.max(1, size * 0.012);
     ctx.shadowOffsetY = Math.max(1, size * 0.02);
-    ctx.fillStyle = s.fg;
-    for (const line of lines) {
-      ctx.fillText(line, W / 2, y);
-      y += lineHeight;
-    }
-    ctx.restore();
+      ctx.fillStyle = s.fg;
+      for (const line of lines) {
+        ctx.fillText(line, cx, y);
+        y += lineHeight;
+      }
+      ctx.restore();
   }
 
   // Author line
@@ -198,22 +195,57 @@ function draw(ctx, W, H, s) {
     ctx.shadowColor = 'rgba(0,0,0,0.30)';
     ctx.shadowBlur = Math.max(1, authorSize * 0.05);
     ctx.shadowOffsetY = Math.max(1, authorSize * 0.02);
-    ctx.fillStyle = s.fg;
-    ctx.fillText(s.author, W / 2, ay);
-    ctx.restore();
+      ctx.fillStyle = s.fg;
+      ctx.fillText(s.author, cx, ay);
+      ctx.restore();
   }
 }
 
 /* ------------------------------------------------------------------ */
 /* Preview                                                             */
 /* ------------------------------------------------------------------ */
+let previewRaf = 0;
+function stopPreviewLoop() {
+  if (previewRaf) cancelAnimationFrame(previewRaf);
+  previewRaf = 0;
+}
+
+const PREVIEW_LOOP_MS = 2200; // full fly-in + hold cycle for the preview
+function previewStep(now) {
+  const st = state();
+  const { w, h } = currentResolution();
+  if (els.canvas.width !== w) els.canvas.width = w;
+  if (els.canvas.height !== h) els.canvas.height = h;
+  els.resReadout.textContent = `${w} × ${h}`;
+  const ctx = els.canvas.getContext('2d');
+
+  // fly-in over the first ~1s, hold, then loop so the preview always shows motion
+  const FLY = 1000;
+  const t = (now - loopStart) % PREVIEW_LOOP_MS;
+  const p = Math.min(t / FLY, 1);
+  draw(ctx, w, h, st, p);
+  if (els.animate.checked && currentMode() === 'video') previewRaf = requestAnimationFrame(previewStep);
+}
+
+let loopStart = 0;
+function startPreviewLoop() {
+  stopPreviewLoop();
+  loopStart = performance.now();
+  previewRaf = requestAnimationFrame(previewStep);
+}
+
 function renderPreview() {
   const { w, h } = currentResolution();
   if (els.canvas.width !== w) els.canvas.width = w;
   if (els.canvas.height !== h) els.canvas.height = h;
   els.resReadout.textContent = `${w} × ${h}`;
   const ctx = els.canvas.getContext('2d');
-  draw(ctx, w, h, state());
+  if (els.animate.checked && currentMode() === 'video') {
+    startPreviewLoop();
+  } else {
+    stopPreviewLoop();
+    draw(ctx, w, h, state());
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -318,8 +350,13 @@ async function exportVideo() {
 
     const totalFrames = Math.max(1, Math.round(duration * fps));
     const dt = 1 / fps;
+    const s = state();
+    const FLY_SECONDS = 1; // the text flies in over the first ~second
+    const animate = els.animate.checked && currentMode() === 'video';
     for (let i = 0; i < totalFrames; i++) {
       const t = (i * dt) / 1; // presentation timestamp in seconds
+      const progress = animate ? Math.min(t / FLY_SECONDS, 1) : 1; // 0 at start → 1 once landed
+      draw(ctx, w, h, s, progress);
       setStatus(`Encoding video… ${Math.round(((i + 1) / totalFrames) * 100)}%`, '');
       await source.add(t, dt);
       await new Promise((r) => requestAnimationFrame(r)); // let the status paint
@@ -348,6 +385,7 @@ function updateModeSections() {
   const mode = currentMode();
   els.imgBlock.hidden = mode !== 'image';
   els.videoBlock.hidden = mode !== 'video';
+  els.animateBlock.hidden = mode !== 'video';
 }
 
 function updateResolutionUI() {
@@ -399,7 +437,7 @@ const liveInputs = [
 liveInputs.forEach((el) => {
   el.addEventListener('input', onAnyUI);
 });
-els.faded.addEventListener('change', onAnyUI);
+els.animate.addEventListener('change', onAnyUI);
 els.resPreset.addEventListener('change', onAnyUI);
 els.modeRadios.forEach((r) => r.addEventListener('change', onAnyUI));
 
