@@ -30,6 +30,7 @@ const els = {
   download: $('download'),
   status: $('status'),
   canvas: $('canvas'),
+  previewVideo: $('previewVideo'),
   webcodecs: $('webcodecs-support'),
 };
 
@@ -276,54 +277,109 @@ function draw(ctx, W, H, s, t = 0) {
 /* ------------------------------------------------------------------ */
 /* Preview                                                             */
 /* ------------------------------------------------------------------ */
-let previewRaf = 0;
-let previewRunning = false;
-function stopPreviewLoop() {
-  previewRunning = false;
-  if (previewRaf) cancelAnimationFrame(previewRaf);
-  previewRaf = 0;
+function isVideoMode() {
+  return currentMode() === 'video';
 }
 
-function previewStep(now) {
-  if (!previewRunning) return;
-  const st = state();
+let videoBuildSeq = 0; // increment on every rebuild; stale builds self-cancel
+let currentVideoUrl = null;
+let currentVideoBlob = null;
+let currentVideoMeta = null; // { key } — fingerprint of the settings the blob was built from
+
+function videoFingerprint() {
+  const s = state();
   const { w, h } = currentResolution();
-  if (els.canvas.width !== w) els.canvas.width = w;
-  if (els.canvas.height !== h) els.canvas.height = h;
-  els.resReadout.textContent = `${w} × ${h}`;
-  const ctx = els.canvas.getContext('2d');
-
-  // Show the animation from the start; for moving titles it keeps running
-  // (the motion is perpetual), for fly-in it settles and holds.
-  const t = now - loopStart;
-  draw(ctx, w, h, st, t);
-  previewRaf = requestAnimationFrame(previewStep);
+  return [
+    w, h, currentMode(),
+    s.title, s.author, s.font, s.weight, s.bg, s.fg,
+    s.effect, s.direction, Math.round(s.sizeFactor * 1000),
+    previewDuration(), previewFps(),
+  ].join('|');
 }
 
-let loopStart = 0;
-function startPreviewLoop() {
-  stopPreviewLoop();
-  previewRunning = true;
-  loopStart = performance.now();
-  previewRaf = requestAnimationFrame(previewStep);
+function revokeCurrentVideo() {
+  if (currentVideoUrl) {
+    URL.revokeObjectURL(currentVideoUrl);
+    currentVideoUrl = null;
+  }
+  currentVideoBlob = null;
+  currentVideoMeta = null;
+  try { els.previewVideo.pause(); } catch (_) {}
+  els.previewVideo.hidden = true;
 }
 
-function animationActive() {
-  return currentMode() === 'video' && els.effect.value !== 'none';
+function showVideo(url, blob, meta) {
+  if (currentVideoUrl && currentVideoUrl !== url) URL.revokeObjectURL(currentVideoUrl);
+  currentVideoUrl = url;
+  currentVideoBlob = blob || null;
+  currentVideoMeta = meta || null;
+  els.canvas.hidden = true;
+  els.previewVideo.hidden = false;
+  els.previewVideo.src = url;
+  try { els.previewVideo.play().catch(() => {}); } catch (_) {}
+}
+
+function showCanvas() {
+  revokeCurrentVideo();
+  els.canvas.hidden = false;
+}
+
+async function buildPreviewVideo() {
+  const seq = ++videoBuildSeq;
+  const { w, h } = currentResolution();
+  const duration = previewDuration();
+  const fps = previewFps();
+  setStatus(`Rendering video preview… 0%`, '');
+  try {
+    const blob = await buildVideo({
+      w, h, duration, fps,
+      progress: (p) => {
+        if (seq === videoBuildSeq) {
+          setStatus(`Rendering video preview… ${Math.round(p * 100)}%`, '');
+        }
+      },
+    });
+    if (seq !== videoBuildSeq) return; // stale — a newer rebuild superseded us
+    const url = URL.createObjectURL(blob);
+    showVideo(url, blob, videoFingerprint());
+    setStatus(`Live preview ready: ${w}×${h}, ${duration}s, ${fps}fps .mp4`, 'ok');
+  } catch (err) {
+    if (seq !== videoBuildSeq) return;
+    showCanvas();
+    friendlyVideoError(err);
+  }
+}
+
+let pendingToken = 0;
+function schedulePreviewVideo() {
+  // Defer so rapid typing / slider-dragging debounces to one rebuild.
+  const token = ++pendingToken;
+  setTimeout(() => {
+    if (token !== pendingToken) return; // superseded by a newer schedule
+    if (isVideoMode()) buildPreviewVideo();
+  }, 250);
 }
 
 function renderPreview() {
   const { w, h } = currentResolution();
+  els.resReadout.textContent = `${w} × ${h}`;
+
+  // Always keep a settled frame painted on the canvas so there's something
+  // visible behind the video (during encode, on failure, and in image mode).
+  const settledT =
+    els.effect.value === 'fly-in' ? 1000 :
+    els.effect.value === 'moving' ? 9000 : 0;
   if (els.canvas.width !== w) els.canvas.width = w;
   if (els.canvas.height !== h) els.canvas.height = h;
-  els.resReadout.textContent = `${w} × ${h}`;
   const ctx = els.canvas.getContext('2d');
-  if (animationActive()) {
-    startPreviewLoop();
+  draw(ctx, w, h, state(), settledT);
+
+  if (isVideoMode()) {
+    // Video mode: keep the settled canvas showing until a fresh .mp4 is ready.
+    schedulePreviewVideo();
   } else {
-    stopPreviewLoop();
-    // Static card: fly-in shown fully landed, moving shown settled.
-    draw(ctx, w, h, state(), els.effect.value === 'fly-in' ? 1000 : 9000);
+    // Image mode: show the canvas, no video.
+    showCanvas();
   }
 }
 
@@ -388,70 +444,96 @@ function loadMediabunny() {
   return mediabunnyPromise;
 }
 
-async function exportVideo() {
+// Render the full animation into an .mp4 Blob. progress is called with 0..1.
+async function buildVideo({ w, h, duration, fps, progress } = {}) {
   if (typeof window.VideoEncoder === 'undefined') {
-    return setStatus('Your browser lacks WebCodecs, so .mp4 export is unavailable. Open in Chrome or Edge.', 'error');
+    throw new Error('webcodecs-unavailable');
   }
 
+  progress = progress || (() => {});
+
+  // Render the still card to an offscreen canvas at full resolution.
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  draw(ctx, w, h, state());
+
+  const MB = await loadMediabunny();
+  const { Output, Mp4OutputFormat, BufferTarget, CanvasSource, Quality, getFirstEncodableVideoCodec } = MB;
+
+  // Pick the best codec the browser can actually encode into MP4.
+  const codec = await getFirstEncodableVideoCodec(
+    ['avc', 'hevc', 'vp9', 'av1'],
+    { width: w, height: h },
+  );
+  if (!codec) {
+    throw new Error('no-codec');
+  }
+
+  const output = new Output({ format: new Mp4OutputFormat(), target: new BufferTarget() });
+  const source = new CanvasSource(canvas, { codec, quality: new Quality('high') });
+  output.addVideoTrack(source);
+  await output.start();
+
+  const totalFrames = Math.max(1, Math.round(duration * fps));
+  const dt = 1 / fps;
+  const s = state();
+  for (let i = 0; i < totalFrames; i++) {
+    const t = (i * dt) / 1; // presentation timestamp in seconds
+    draw(ctx, w, h, s, t * 1000); // animation time in ms
+    progress((i + 1) / totalFrames);
+    await source.add(t, dt);
+    await new Promise((r) => requestAnimationFrame(r)); // let the status paint
+  }
+
+  source.close();
+  await output.finalize();
+
+  return new Blob([output.target.buffer], { type: 'video/mp4' });
+}
+
+async function exportVideo() {
   const { w, h } = currentResolution();
-  let duration = Number(els.duration.value);
-  if (!Number.isFinite(duration) || duration <= 0) duration = 5;
-  duration = Math.min(Math.max(duration, 1), MAX_VIDEO_SECONDS);
-  const fps = Number(els.fps.value) || 30;
+  let duration = previewDuration();
+  const fps = previewFps();
 
   setStatus(`Preparing video encoder…`, '');
   els.download.disabled = true;
 
   try {
-    // Render the still card to an offscreen canvas at full resolution.
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    draw(ctx, w, h, state());
-
-    const MB = await loadMediabunny();
-    const { Output, Mp4OutputFormat, BufferTarget, CanvasSource, Quality, getFirstEncodableVideoCodec } = MB;
-
-    // Pick the best codec the browser can actually encode into MP4.
-    const codec = await getFirstEncodableVideoCodec(
-      ['avc', 'hevc', 'vp9', 'av1'],
-      { width: w, height: h },
-    );
-    if (!codec) {
-      return setStatus('No supported video codec could be found in this browser.', 'error');
+    // Reuse the already-rendered preview if it matches the current settings.
+    let blob = (currentVideoMeta === videoFingerprint()) ? currentVideoBlob : null;
+    if (!blob) {
+      blob = await buildVideo({ w, h, duration, fps, progress: (p) => setStatus(`Encoding video… ${Math.round(p * 100)}%`, '') });
     }
-
-    const output = new Output({ format: new Mp4OutputFormat(), target: new BufferTarget() });
-    const source = new CanvasSource(canvas, { codec, quality: new Quality('high') });
-    output.addVideoTrack(source);
-    await output.start();
-
-    const totalFrames = Math.max(1, Math.round(duration * fps));
-    const dt = 1 / fps;
-    const s = state();
-    for (let i = 0; i < totalFrames; i++) {
-      const t = (i * dt) / 1; // presentation timestamp in seconds
-      draw(ctx, w, h, s, t * 1000); // animation time in ms
-      setStatus(`Encoding video… ${Math.round(((i + 1) / totalFrames) * 100)}%`, '');
-      await source.add(t, dt);
-      await new Promise((r) => requestAnimationFrame(r)); // let the status paint
-    }
-
-    source.close();
-    await output.finalize();
-
-    const buffer = output.target.buffer;
-    const blob = new Blob([buffer], { type: 'video/mp4' });
     downloadBlob(blob, `${MEDIA_ID}-${slug(state().title)}-${w}x${h}-${duration}s.mp4`);
-    setStatus(`Video saved: ${w}×${h}, ${duration}s, ${codec.toUpperCase()}.mp4`, 'ok');
+    setStatus(`Video saved: ${w}×${h}, ${duration}s, ${fps}fps .mp4`, 'ok');
   } catch (err) {
     console.error(err);
-    const msg = err && err.message ? ` (error: ${err.message})` : '';
-    setStatus(`Video export failed.${msg} Try a Chrome/Edge browser, or use Image output.`, 'error');
+    friendlyVideoError(err);
   } finally {
     els.download.disabled = false;
   }
+}
+
+function previewDuration() {
+  let d = Number(els.duration.value);
+  if (!Number.isFinite(d) || d <= 0) d = 5;
+  return Math.min(Math.max(d, 1), MAX_VIDEO_SECONDS);
+}
+
+function previewFps() {
+  const f = Number(els.fps.value);
+  return Number.isFinite(f) && f > 0 ? f : 30;
+}
+
+function friendlyVideoError(err) {
+  const msg = err && err.message ? ` (error: ${err.message})` : '';
+  if (err && err.message === 'webcodecs-unavailable') {
+    return setStatus('Your browser lacks WebCodecs, so .mp4 preview/export is unavailable. Open in Chrome or Edge.', 'error');
+  }
+  setStatus(`Video failed.${msg} Try a Chrome/Edge browser, or use Image output.`, 'error');
 }
 
 /* ------------------------------------------------------------------ */

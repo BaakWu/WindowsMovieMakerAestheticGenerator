@@ -194,7 +194,8 @@ input[type="range"] { width: 100%; accent-color: var(--accent-2); }
   padding: 14px;
   border: 1px solid var(--border);
 }
-#canvas {
+#canvas,
+#previewVideo {
   width: 640px;
   max-width: 100%;
   height: auto;
