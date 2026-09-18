@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Classic Movie Title Maker</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <main class="app">
+    <header class="app__header">
+      <h1>Classic Movie Title Maker</h1>
+      <p class="app__subtitle">Windows Movie Maker &middot; Old YouTube title cards &middot; <span id="webcodecs-support" class="badge badge--checking">checking…</span></p>
+    </header>
+
+    <div class="layout">
+      <section class="controls" aria-label="Controls">
+        <div class="field">
+          <label for="title">Title text</label>
+          <textarea id="title" rows="3" placeholder="e.g.&#10;My Favorite&#10;Compilations">My Favorite Compilations</textarea>
+        </div>
+
+        <div class="field">
+          <label for="author">Author / subtitle line <span class="hint">(optional)</span></label>
+          <input id="author" type="text" placeholder="e.g. By PrincessZelda123" value="By PrincessZelda123" />
+        </div>
+
+        <div class="grid2">
+          <div class="field">
+            <label for="font">Font</label>
+            <select id="font">
+              <option value="Segoe UI" selected>Segoe UI</option>
+              <option value="Segoe Print">Segoe Print</option>
+              <option value="Arial">Arial</option>
+              <option value="Comic Sans MS">Comic Sans MS</option>
+              <option value="Impact">Impact</option>
+              <option value="Courier New">Courier New</option>
+              <option value="Georgia">Georgia</option>
+              <option value="Times New Roman">Times New Roman</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="weight">Weight</label>
+            <select id="weight">
+              <option value="400" selected>Regular</option>
+              <option value="700">Bold</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid2">
+          <div class="field">
+            <label for="bgColor">Background</label>
+            <div class="color-row">
+              <input id="bgColor" type="color" value="#104080" />
+              <div class="swatches" aria-label="Preset colors">
+                <button type="button" class="swatch" data-color="#104080" title="#104080" style="background:#104080"></button>
+                <button type="button" class="swatch" data-color="#3778BF" title="#3778BF" style="background:#3778BF"></button>
+              </div>
+            </div>
+          </div>
+          <div class="field">
+            <label for="textColor">Text color</label>
+            <div class="color-row">
+              <input id="textColor" type="color" value="#ffffff" />
+              <button type="button" class="swatch swatch--white" data-color="#ffffff" title="#ffffff" style="background:#ffffff"></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="field row-check">
+          <label class="check">
+            <input id="fadedBgtxt" type="checkbox" />
+            <span>Faded oversized background text</span>
+          </label>
+        </div>
+
+        <div class="field">
+          <label for="size">Text size <span class="hint">(<span id="sizeVal">100</span>%)</span></label>
+          <input id="size" type="range" min="40" max="220" value="100" />
+        </div>
+
+        <fieldset class="seg" id="mode">
+          <label class="seg__option">
+            <input type="radio" name="mode" value="image" checked />
+            <span>Image</span>
+          </label>
+          <label class="seg__option">
+            <input type="radio" name="mode" value="video" />
+            <span>Video (.mp4)</span>
+          </label>
+        </fieldset>
+
+        <div class="output-settings" id="output-settings">
+          <div class="field" id="img-block">
+            <label for="imgFormat">Format</label>
+            <select id="imgFormat">
+              <option value="image/png" selected>PNG (lossless)</option>
+              <option value="image/jpeg">JPEG (smaller)</option>
+            </select>
+          </div>
+
+          <div class="grid2" id="video-block" hidden>
+            <div class="field">
+              <label for="duration">Duration <span class="hint">(<span id="durVal">5</span>s, max 10)</span></label>
+              <input id="duration" type="range" min="1" max="10" value="5" />
+            </div>
+            <div class="field">
+              <label for="fps">Frame rate</label>
+              <select id="fps">
+                <option value="24">24 fps</option>
+                <option value="30" selected>30 fps</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="resPreset">Resolution</label>
+          <select id="resPreset">
+            <option value="1920x1080" selected>1920 × 1080 (1080p)</option>
+            <option value="1280x720">1280 × 720 (720p)</option>
+            <option value="2560x1440">2560 × 1440 (1440p)</option>
+            <option value="custom">Custom…</option>
+          </select>
+        </div>
+
+        <div class="field grid2" id="custom-res" hidden>
+          <div>
+            <label for="resW">Width</label>
+            <input id="resW" type="number" min="160" max="6000" step="2" value="1920" />
+          </div>
+          <div>
+            <label for="resH">Height</label>
+            <input id="resH" type="number" min="120" max="6000" step="2" value="1080" />
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="download" class="btn btn--primary" type="button">Download</button>
+        </div>
+        <p id="status" class="status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section class="preview" aria-label="Live preview">
+        <div class="preview__frame">
+          <canvas id="canvas" width="1920" height="1080"></canvas>
+        </div>
+        <div class="preview__meta">
+          <span id="resReadout">1920 × 1080</span>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="./app.js"></script>
+</body>
+</html>
