@@ -1,4 +1,4 @@
-# Classic Movie Title Maker
+# Windows Movie Maker Title Generator
 
 A **vanilla JavaScript web app** that recreates the old Windows Movie Maker /
 early-YouTube era opening title card: big centered text on a solid background,
@@ -11,9 +11,6 @@ scrolling across the background) and optional fade-in / fade-out.
   - Video mode: the animation is rendered frame-by-frame and encoded to a real
     `.mp4` entirely on your machine via WebCodecs + [Mediabunny](https://github.com/mediabunny/mediabunny)
     (loaded from a CDN at runtime; Chrome/Edge required for MP4).
-- Your title text, colors, and rendered files **never leave your computer**.
-  The only network request the app makes is fetching the Mediabunny encoder
-  library from the jsDelivr CDN.
 
 ## Usage
 

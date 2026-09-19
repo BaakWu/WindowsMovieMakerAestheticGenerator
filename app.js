@@ -1,4 +1,4 @@
-/* Classic Movie Title Maker — vanilla JS, no backend. */
+/* Windows Movie Maker Title Generator — vanilla JS, no backend. */
 const $ = (id) => document.getElementById(id);
 
 const els = {
