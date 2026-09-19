@@ -1,5 +1,7 @@
 # Windows Movie Maker Title Generator
 
+<img src="assets/demo.gif" alt="Demo: typing a title in the Windows Movie Maker Title Generator and watching the live preview update as it animates." width="100%" />
+
 A **vanilla JavaScript web app** that recreates the old Windows Movie Maker /
 early-YouTube era opening title card: big centered text on a solid background,
 with the classic "moving titles" effect (a translucent copy of your title
@@ -56,8 +58,10 @@ Or connect the repo to a Cloudflare Pages project with the build command
 | File | Purpose |
 | --- | --- |
 | `index.html` | UI markup |
-| `app.js` | state, rendering, preview, image + MP4 export |
+| `app.js` | state, rendering, preview, image + MP4/GIF export |
 | `styles.css` | styling |
+| `assets/demo.gif` | README demo GIF |
+| `assets/screenshot.png` | still screenshot (fallback) |
 | `wrangler.json` | Cloudflare Pages deployment config |
 
 ## License
