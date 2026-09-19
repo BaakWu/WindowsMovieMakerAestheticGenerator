@@ -10,7 +10,9 @@
   <main class="app">
     <header class="app__header">
       <h1>Windows Movie Maker Title Generator</h1>
-      <p class="app__subtitle">Windows Movie Maker &middot; Old YouTube title cards &middot; <span id="webcodecs-support" class="badge badge--checking">checking…</span></p>
+      <p class="app__subtitle">Windows Movie Maker &middot; Old YouTube title cards &middot; <span id="webcodecs-support" class="badge badge--checking">checking…</span><br>
+        <a href="https://github.com/BaakWu/WindowsMovieMakerAestheticGenerator" style="color:var(--accent-2)">github.com/BaakWu/WindowsMovieMakerAestheticGenerator</a> &middot;
+        <a href="#privacy" style="color:var(--accent-2)">Privacy</a> &middot; MIT License</p>
     </header>
 
     <div class="layout">
@@ -75,11 +77,11 @@
 
         <fieldset class="seg" id="mode">
           <label class="seg__option">
-            <input type="radio" name="mode" value="image" checked />
+            <input type="radio" name="mode" value="image" />
             <span>Image</span>
           </label>
           <label class="seg__option">
-            <input type="radio" name="mode" value="video" />
+            <input type="radio" name="mode" value="video" checked />
             <span>Video (.mp4)</span>
           </label>
         </fieldset>
@@ -185,8 +187,62 @@
         </div>
       </section>
     </div>
+
+    <section class="about" aria-label="About and license">
+      <h2>Nothing is uploaded</h2>
+      <p>Everything runs in your browser &mdash; your title text, colors, and the generated
+         image or video are processed locally on your device. There is <b>no back end</b>:
+         no server, no API, no account, no analytics, no cookies. Image mode needs no network
+         at all. For video, the page fetches exactly one third-party file at runtime &mdash;
+         the <code>Mediabunny</code> MP4 encoder from <code>cdn.jsdelivr.net</code> &mdash; and
+         encodes the .mp4 on your own machine.</p>
+
+      <h2>Project</h2>
+      <p>Repository: <a href="https://github.com/BaakWu/WindowsMovieMakerAestheticGenerator">github.com/BaakWu/WindowsMovieMakerAestheticGenerator</a><br>
+         License: <b>MIT</b> &copy; 2026 BaakWu</p>
+
+      <details id="privacy">
+        <summary>Privacy policy</summary>
+        <div class="about__body">
+          <p><b>Last updated: 18 September 2026.</b></p>
+          <p><b>Your content stays on your device.</b> The title text, subtitle, font,
+             colors, and every generated image or video are processed locally in your
+             browser. They are never uploaded or sent to the site owner, Cloudflare, or
+             GitHub.</p>
+          <ul>
+            <li>The app sets no cookies or persistent browser storage.</li>
+            <li>The app includes no analytics, advertising, fingerprinting, or other user tracking.</li>
+            <li>The only third-party network request is the download of the
+                <code>Mediabunny</code> MP4 encoder library
+                (<code>cdn.jsdelivr.net</code>), which is needed only for .mp4 output.
+                No data you enter is ever sent to it.</li>
+            <li>Reloading or closing the page clears its working data. Files you download
+                remain on your device until you delete them.</li>
+          </ul>
+          <p><b>Cloudflare hosting.</b> The hosted site uses Cloudflare for DNS and static
+             hosting. Cloudflare automatically processes routine technical data needed to
+             serve and protect the site, which may include your IP address, request time,
+             requested URL, browser or user-agent information, and security or routing
+             data. This does not include any title text or media you create with the
+             generator. Cloudflare handles that data under its
+             <a href="https://www.cloudflare.com/privacypolicy">Privacy Policy</a>.</p>
+          <p>The site owner does not add to Cloudflare's collection, sell personal data, or
+             use it for advertising or profiling. Opening <code>index.html</code> locally
+             avoids a hosted site request altogether. GitHub applies its own privacy
+             policy only if you choose to follow a link to GitHub.</p>
+          <p>Questions about this policy can be submitted through the
+             <a href="https://github.com/BaakWu/WindowsMovieMakerAestheticGenerator/issues">project issue tracker</a>.
+             Issues are public, so do not include sensitive information.</p>
+        </div>
+      </details>
+    </section>
   </main>
 
   <script src="./app.js"></script>
+  <script>
+    const openPrivacy = () => { const el = document.getElementById("privacy"); if (el) el.open = true; };
+    document.querySelectorAll('a[href="#privacy"]').forEach(a => a.addEventListener("click", openPrivacy));
+    if (location.hash === "#privacy") openPrivacy();
+  </script>
 </body>
 </html>
