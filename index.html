@@ -82,12 +82,25 @@
           </label>
           <label class="seg__option">
             <input type="radio" name="mode" value="video" checked />
-            <span>Video (.mp4)</span>
+            <span>Video (.mp4 / .gif)</span>
           </label>
         </fieldset>
 
         <div class="output-settings" id="output-settings">
-          <div class="field" id="img-block">
+          <div class="field" id="fmt-block" hidden>
+            <label>Format</label>
+            <div class="seg" role="radiogroup" aria-label="Video format">
+              <label class="seg__option">
+                <input type="radio" name="fmt" id="fmtRadio" value="mp4" checked />
+                <span>MP4 (.mp4)</span>
+              </label>
+              <label class="seg__option">
+                <input type="radio" name="fmt" id="fmtRadio2" value="gif" />
+                <span>Animated (.gif)</span>
+              </label>
+            </div>
+          </div>
+          <div class="field" id="imgBlock">
             <label for="imgFormat">Format</label>
             <select id="imgFormat">
               <option value="image/png" selected>PNG (lossless)</option>
@@ -175,6 +188,7 @@
       <section class="preview" aria-label="Live preview">
         <div class="preview__frame">
           <video id="previewVideo" controls playsinline muted autoplay loop hidden></video>
+          <img id="previewImg" alt="" hidden />
           <canvas id="canvas" width="1920" height="1080"></canvas>
           <div id="progress" class="preview__progress" hidden>
             <span class="preview__progress-label">Rendering preview…</span>
@@ -193,9 +207,9 @@
       <p>Everything runs in your browser &mdash; your title text, colors, and the generated
          image or video are processed locally on your device. There is <b>no back end</b>:
          no server, no API, no account, no analytics, no cookies. Image mode needs no network
-         at all. For video, the page fetches exactly one third-party file at runtime &mdash;
-         the <code>Mediabunny</code> MP4 encoder from <code>cdn.jsdelivr.net</code> &mdash; and
-         encodes the .mp4 on your own machine.</p>
+         at all. For video, the page fetches only the encoder library at runtime, from
+         <code>cdn.jsdelivr.net</code> &mdash; <code>Mediabunny</code> for .mp4,
+         <code>gifenc</code> for .gif &mdash; and encodes the file on your own machine.</p>
 
       <h2>Project</h2>
       <p>Repository: <a href="https://github.com/BaakWu/WindowsMovieMakerAestheticGenerator">github.com/BaakWu/WindowsMovieMakerAestheticGenerator</a><br>
@@ -212,10 +226,10 @@
           <ul>
             <li>The app sets no cookies or persistent browser storage.</li>
             <li>The app includes no analytics, advertising, fingerprinting, or other user tracking.</li>
-            <li>The only third-party network request is the download of the
-                <code>Mediabunny</code> MP4 encoder library
-                (<code>cdn.jsdelivr.net</code>), which is needed only for .mp4 output.
-                No data you enter is ever sent to it.</li>
+            <li>The only third-party network requests are the downloads of the
+                encoder libraries from <code>cdn.jsdelivr.net</code> &mdash;
+                <code>Mediabunny</code> for .mp4 output and <code>gifenc</code>
+                for .gif output. No data you enter is ever sent to them.</li>
             <li>Reloading or closing the page clears its working data. Files you download
                 remain on your device until you delete them.</li>
           </ul>

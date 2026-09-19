@@ -8,9 +8,11 @@ scrolling across the background) and optional fade-in / fade-out.
 - **Use it:** open [`index.html`](index.html) — no server, no build step, no uploads.
 - **No server. No upload.** Everything runs in your browser:
   - Image mode: the title card is drawn on a `<canvas>`.
-  - Video mode: the animation is rendered frame-by-frame and encoded to a real
-    `.mp4` entirely on your machine via WebCodecs + [Mediabunny](https://github.com/mediabunny/mediabunny)
-    (loaded from a CDN at runtime; Chrome/Edge required for MP4).
+    - Video mode: the animation is rendered frame-by-frame and encoded on your
+    machine. `.mp4` uses WebCodecs + [Mediabunny](https://github.com/mediabunny/mediabunny)
+    (Chrome/Edge required); animated `.gif` uses
+    [gifenc](https://github.com/mattdesl/gifenc). Both encoder libraries are
+    loaded from a CDN at runtime.
 
 ## Usage
 
@@ -19,7 +21,7 @@ scrolling across the background) and optional fade-in / fade-out.
 2. Enter a title (and optional subtitle line), pick font, colors, and size.
 3. Choose the output mode:
    - **Image** — exports a single PNG (lossless) or JPEG.
-   - **Video (.mp4)** — 1–10 s, 10–60 fps, with an animation:
+    - **Video** — .mp4 or animated .gif, 1–10 s, 10–60 fps, with an animation:
      - *None* — static card.
      - *Title fly-in* — text flies in from one of 8 directions.
      - *Moving titles* — scrolling translucent background title (the Movie
@@ -45,9 +47,9 @@ Or connect the repo to a Cloudflare Pages project with the build command
 
 - No backend, no analytics, no cookies, no tracking.
 - Rendering, encoding, and file downloads happen client-side.
-- The page makes exactly one third-party fetch at runtime: the Mediabunny
-  encoder from `cdn.jsdelivr.net` (only needed for MP4 output). Image mode
-  works fully offline.
+- The page makes only third-party fetches for the encoder libraries at runtime:
+  `Mediabunny` (MP4 output) and `gifenc` (GIF output), both from
+  `cdn.jsdelivr.net`. Image mode works fully offline.
 
 ## Project layout
 

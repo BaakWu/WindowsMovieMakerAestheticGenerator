@@ -12,8 +12,9 @@ const els = {
   sizeVal: $('sizeVal'),
   modeRadios: document.querySelectorAll('input[name="mode"]'),
   imgFormat: $('imgFormat'),
-  imgBlock: $('img-block'),
+  imgBlock: $('imgBlock'),
   videoBlock: $('video-block'),
+  fmtBlock: $('fmt-block'),
   animateBlock: $('animate-block'),
   effect: $('effect'),
   effectDirWrap: $('effect-dir'),
@@ -33,6 +34,7 @@ const els = {
   status: $('status'),
   canvas: $('canvas'),
   previewVideo: $('previewVideo'),
+  previewImg: $('previewImg'),
   progress: $('progress'),
   progressLabel: document.querySelector('.preview__progress-label'),
   progressBar: $('progressBar'),
@@ -300,46 +302,60 @@ function isVideoMode() {
   return currentMode() === 'video';
 }
 
-let videoBuildSeq = 0; // increment on every rebuild; stale builds self-cancel
-let currentVideoUrl = null;
-let currentVideoBlob = null;
-let currentVideoMeta = null; // { key } — fingerprint of the settings the blob was built from
+function videoFormat() {
+  const checked = document.querySelector('input[name="fmt"]:checked');
+  if (checked && checked.value === 'gif') return 'gif';
+  return 'mp4';
+}
 
-function videoFingerprint() {
+let videoBuildSeq = 0; // increment on every rebuild; stale builds self-cancel
+
+// One render per format, so flipping the format doesn't re-encode the other one.
+let mp4Cache = null; // { url, blob, meta }
+let gifCache = null; // { url, blob, meta }
+
+function currentCache() {
+  return videoFormat() === 'gif' ? gifCache : mp4Cache;
+}
+function setCache(fmt, entry) {
+  if (fmt === 'gif') gifCache = entry;
+  else mp4Cache = entry;
+}
+
+function settingsFingerprint() {
   const s = state();
   const { w, h } = currentResolution();
   return [
-    w, h, currentMode(),
+    w, h,
     s.title, s.author, s.font, s.weight, s.bg, s.fg,
     s.effect, s.direction, s.fadeOut ? 1 : 0, Math.round(s.sizeFactor * 1000),
     previewDuration(), previewFps(),
   ].join('|');
 }
 
-function revokeCurrentVideo() {
-  if (currentVideoUrl) {
-    URL.revokeObjectURL(currentVideoUrl);
-    currentVideoUrl = null;
-  }
-  currentVideoBlob = null;
-  currentVideoMeta = null;
+function revokeCurrentPreview() {
+  // Keep both rendered blobs cached — only hide the media elements.
   try { els.previewVideo.pause(); } catch (_) {}
   els.previewVideo.hidden = true;
+  els.previewImg.hidden = true;
 }
 
-function showVideo(url, blob, meta) {
-  if (currentVideoUrl && currentVideoUrl !== url) URL.revokeObjectURL(currentVideoUrl);
-  currentVideoUrl = url;
-  currentVideoBlob = blob || null;
-  currentVideoMeta = meta || null;
+function showPreview(url, fmt) {
   els.canvas.hidden = true;
-  els.previewVideo.hidden = false;
-  els.previewVideo.src = url;
-  try { els.previewVideo.play().catch(() => {}); } catch (_) {}
+  if (fmt === 'gif') {
+    els.previewVideo.hidden = true;
+    els.previewImg.hidden = false;
+    els.previewImg.src = url;
+  } else {
+    els.previewImg.hidden = true;
+    els.previewVideo.hidden = false;
+    els.previewVideo.src = url;
+    try { els.previewVideo.play().catch(() => {}); } catch (_) {}
+  }
 }
 
 function showCanvas() {
-  revokeCurrentVideo();
+  revokeCurrentPreview();
   hideProgress();
   els.canvas.hidden = false;
 }
@@ -359,27 +375,33 @@ function hideProgress() {
 
 async function buildPreviewVideo() {
   const seq = ++videoBuildSeq;
+  const fmt = videoFormat();
   const { w, h } = currentResolution();
   const duration = previewDuration();
   const fps = previewFps();
+  const meta = settingsFingerprint();
+  const cached = (fmt === 'gif' ? gifCache : mp4Cache);
+  if (cached && cached.meta === meta) {
+    // Already rendered from these settings — just flip the preview over.
+    showPreview(cached.url, fmt);
+    hideProgress();
+    return;
+  }
+
   els.download.disabled = true;
   els.progressLabel.textContent = 'Rendering preview…';
   showProgress(0);
-  setStatus(`Rendering video preview… 0%`, '');
   try {
-    const blob = await buildVideo({
-      w, h, duration, fps,
-      progress: (p) => {
-        if (seq !== videoBuildSeq) return;
-        showProgress(p);
-        setStatus(`Rendering video preview… ${Math.round(p * 100)}%`, '');
-      },
-    });
+    const blob = fmt === 'gif'
+      ? await buildGif({ w, h, duration, fps, progress: (p) => seq === videoBuildSeq && showProgress(p) })
+      : await buildVideo({ w, h, duration, fps, progress: (p) => seq === videoBuildSeq && showProgress(p) });
     if (seq !== videoBuildSeq) return; // stale — a newer rebuild superseded us
+    const old = (fmt === 'gif' ? gifCache : mp4Cache);
+    if (old && old.url) { try { URL.revokeObjectURL(old.url); } catch (_) {} }
     const url = URL.createObjectURL(blob);
-    showVideo(url, blob, videoFingerprint());
+    setCache(fmt, { url, blob, meta });
+    showPreview(url, fmt);
     hideProgress();
-    setStatus(`Live preview ready: ${w}×${h}, ${duration}s, ${fps}fps .mp4`, 'ok');
   } catch (err) {
     if (seq !== videoBuildSeq) return;
     hideProgress();
@@ -389,6 +411,8 @@ async function buildPreviewVideo() {
     els.download.disabled = false;
   }
 }
+
+let videoDeferred = false; // text still being typed — rebuild on blur instead
 
 let pendingToken = 0;
 function schedulePreviewVideo() {
@@ -415,8 +439,16 @@ function renderPreview() {
   draw(ctx, w, h, state(), dur / 2, dur);
 
   if (isVideoMode()) {
-    // Video mode: keep the settled canvas showing until a fresh .mp4 is ready.
-    schedulePreviewVideo();
+    if (videoDeferred) {
+      // Still typing in the title/subtitle: hide the now-stale video so the
+      // live canvas (with the current text) stays visible until they finish.
+      try { els.previewVideo.pause(); } catch (_) {}
+      els.previewVideo.hidden = true;
+      els.previewImg.hidden = true;
+      els.canvas.hidden = false;
+    }
+    // While typing, defer the re-encode until focus leaves the text inputs.
+    if (videoDeferred === false) schedulePreviewVideo();
   } else {
     // Image mode: show the canvas, no video.
     showCanvas();
@@ -533,25 +565,95 @@ async function buildVideo({ w, h, duration, fps, progress } = {}) {
   return new Blob([output.target.buffer], { type: 'video/mp4' });
 }
 
+/* GIF export (client-side, via gifenc) */
+let gifencPromise = null;
+function loadGifenc() {
+  if (!gifencPromise) {
+    // Use the ESM namespace directly — gifenc's `default` export is the
+    // GIFEncoder function itself, so destructuring from it would not yield
+    // quantize/applyPalette.
+    gifencPromise = (
+      import('https://cdn.jsdelivr.net/npm/gifenc@1.0.3/+esm')
+        .catch(() => import('/gifenc.module.js'))
+    ).then((m) => {
+      const ns = (m && m.default && typeof m.default === 'object') ? m.default : m;
+      if (typeof ns.GIFEncoder !== 'function' || typeof ns.quantize !== 'function') {
+        throw new Error('gifenc-missing-exports');
+      }
+      return ns;
+    });
+  }
+  return gifencPromise;
+}
+
+// Render the full animation into an animated GIF Blob. progress is called with 0..1.
+// GIFs are size-sensitive, so frames are rendered capped at 1280px wide.
+async function buildGif({ w, h, duration, fps, progress } = {}) {
+  progress = progress || (() => {});
+  const lib = await loadGifenc();
+  const { GIFEncoder, quantize, applyPalette } = lib;
+
+  const scale = Math.min(1, 1280 / w);
+  const rw = Math.max(2, Math.round((w / 2) * scale) * 2);
+  const rh = Math.max(2, Math.round((h / 2) * scale) * 2);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = rw;
+  canvas.height = rh;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+  const s = state();
+  const totalFrames = Math.max(1, Math.round(duration * fps));
+  const delay = Math.max(20, Math.round(1000 / fps)); // ms per frame
+
+  // gifenc expects a plain Uint8Array (a view over the same bytes), not the
+  // browser's Uint8ClampedArray from getImageData().
+  const rgba = (x, y, ww, hh) => new Uint8Array(ctx.getImageData(x, y, ww, hh).data.buffer);
+
+  // Sample the palette from a mid-animation frame (same trick as the static
+  // preview): at t=0 the "moving titles" effect is still fully faded out,
+  // so the canvas is just the background color and the palette would omit
+  // the text color — making white text collapse to the nearest bg shade.
+  draw(ctx, rw, rh, s, (duration * 1000) / 2, duration * 1000);
+  const palette = quantize(rgba(0, 0, rw, rh), 256);
+
+  const gif = GIFEncoder();
+  for (let i = 0; i < totalFrames; i++) {
+    draw(ctx, rw, rh, s, (i * 1000) / fps);
+    const index = applyPalette(rgba(0, 0, rw, rh), palette);
+    gif.writeFrame(index, rw, rh, i === 0 ? { palette, delay } : { delay });
+    progress((i + 1) / totalFrames);
+    await new Promise((r) => requestAnimationFrame(r)); // keep the progress bar painting
+  }
+  gif.finish();
+
+  return new Blob([gif.bytes()], { type: 'image/gif' });
+}
+
 async function exportVideo() {
+  const fmt = videoFormat();
+  const ext = fmt === 'gif' ? 'gif' : 'mp4';
   const { w, h } = currentResolution();
-  let duration = previewDuration();
+  const duration = previewDuration();
   const fps = previewFps();
 
-  setStatus(`Preparing video encoder…`, '');
+  setStatus(`Preparing ${ext.toUpperCase()} encoder…`, '');
   els.download.disabled = true;
 
   try {
     // Reuse the already-rendered preview if it matches the current settings.
-    let blob = (currentVideoMeta === videoFingerprint()) ? currentVideoBlob : null;
+    const c = currentCache();
+    let blob = (c && c.meta === settingsFingerprint()) ? c.blob : null;
     if (!blob) {
-      els.progressLabel.textContent = 'Saving video…';
+      els.progressLabel.textContent = 'Saving…';
       showProgress(0);
-      blob = await buildVideo({ w, h, duration, fps, progress: (p) => { showProgress(p); setStatus(`Encoding video… ${Math.round(p * 100)}%`, ''); } });
+      blob = fmt === 'gif'
+        ? await buildGif({ w, h, duration, fps, progress: showProgress })
+        : await buildVideo({ w, h, duration, fps, progress: showProgress });
       hideProgress();
     }
-    downloadBlob(blob, `${MEDIA_ID}-${slug(state().title)}-${w}x${h}-${duration}s.mp4`);
-    setStatus(`Video saved: ${w}×${h}, ${duration}s, ${fps}fps .mp4`, 'ok');
+    downloadBlob(blob, `${MEDIA_ID}-${slug(state().title)}-${w}x${h}-${duration}s.${ext}`);
+    setStatus(`${ext.toUpperCase()} saved: ${w}×${h}, ${duration}s, ${fps}fps`, 'ok');
   } catch (err) {
     console.error(err);
     hideProgress();
@@ -574,20 +676,27 @@ function previewFps() {
 
 function friendlyVideoError(err) {
   const msg = err && err.message ? ` (error: ${err.message})` : '';
-  if (err && err.message === 'webcodecs-unavailable') {
-    return setStatus('Your browser lacks WebCodecs, so .mp4 preview/export is unavailable. Open in Chrome or Edge.', 'error');
+  const kind = videoFormat() === 'gif' ? 'GIF' : '.mp4';
+  if (err && err.message === 'gifenc-missing-exports') {
+    return setStatus('The GIF encoder library failed to load from the CDN. Check your connection and retry, or fall back to Image (.png/.jpg) / .mp4 output.', 'error');
   }
-  setStatus(`Video failed.${msg} Try a Chrome/Edge browser, or use Image output.`, 'error');
+  if (err && err.message === 'webcodecs-unavailable') {
+    if (kind === '.mp4') {
+      return setStatus('Your browser lacks WebCodecs, so .mp4 preview/export is unavailable. Open in Chrome or Edge, or switch the format to .gif.', 'error');
+    }
+  }
+  setStatus(`${kind} failed.${msg} Try a Chrome/Edge browser, or use Image output.`, 'error');
 }
 
 /* ------------------------------------------------------------------ */
 /* Wiring                                                              */
 /* ------------------------------------------------------------------ */
 function updateModeSections() {
-  const mode = currentMode();
-  els.imgBlock.hidden = mode !== 'image';
-  els.videoBlock.hidden = mode !== 'video';
-  els.animateBlock.hidden = mode !== 'video';
+  const isVideo = currentMode() === 'video';
+  els.imgBlock.hidden = isVideo;
+  els.fmtBlock.hidden = !isVideo;
+  els.videoBlock.hidden = !isVideo;
+  els.animateBlock.hidden = !isVideo;
   els.effectDirWrap.hidden = els.effect.value !== 'fly-in';
   els.fadeOutWrap.hidden = els.effect.value !== 'moving';
 }
@@ -646,6 +755,20 @@ els.effectDir.addEventListener('change', onAnyUI);
 els.fadeOut.addEventListener('change', onAnyUI);
 els.resPreset.addEventListener('change', onAnyUI);
 els.modeRadios.forEach((r) => r.addEventListener('change', onAnyUI));
+document.querySelectorAll('input[name="fmt"]').forEach((r) => r.addEventListener('change', onAnyUI));
+
+// While typing in the title/subtitle, don't re-encode the video on every keystroke —
+// rebuild only once focus leaves those fields.
+[els.title, els.author].forEach((el) => {
+  el.addEventListener('blur', () => {
+    if (!videoDeferred) return;
+    videoDeferred = false;
+    if (isVideoMode()) schedulePreviewVideo();
+  });
+});
+document.addEventListener('focusin', (e) => {
+  if (e.target === els.title || e.target === els.author) videoDeferred = true;
+});
 
 // Preset color swatches — set the color input in the same row
 document.querySelectorAll('[data-color]').forEach((btn) => {
