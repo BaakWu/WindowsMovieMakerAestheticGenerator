@@ -111,6 +111,16 @@ input[type="range"] { width: 100%; accent-color: var(--accent-2); }
 }
 .check input { width: 16px; height: 16px; accent-color: var(--accent-2); }
 
+/* Lock the controls while a render is in progress */
+.controls--locked .field,
+.controls--locked .actions,
+.controls--locked .seg,
+.controls--locked .check,
+.controls--locked .swatch {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
 /* segmented control */
 .seg { border: 0; padding: 0; margin: 0; display: flex; gap: 6px; }
 .seg__option { flex: 1; }

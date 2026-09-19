@@ -40,6 +40,7 @@ const els = {
   progressBar: $('progressBar'),
   progressValue: $('progressValue'),
   webcodecs: $('webcodecs-support'),
+  controlsPanel: document.querySelector('.controls'),
 };
 
 const MAX_VIDEO_SECONDS = 10;
@@ -86,6 +87,14 @@ function state() {
 
 function fontString(px) {
   return `${els.weight.value} ${Math.round(px)}px "${els.font.value}", Arial, sans-serif`;
+}
+
+// Image mode renders a single static card, so it ignores the animation effect;
+// video mode keeps it.
+function renderState() {
+  const s = state();
+  if (currentMode() === 'image') s.effect = 'none';
+  return s;
 }
 
 /* ------------------------------------------------------------------ */
@@ -385,10 +394,12 @@ async function buildPreviewVideo() {
     // Already rendered from these settings — just flip the preview over.
     showPreview(cached.url, fmt);
     hideProgress();
+    setControlsLocked(false);
     return;
   }
 
   els.download.disabled = true;
+  setControlsLocked(true);
   els.progressLabel.textContent = 'Rendering preview…';
   showProgress(0);
   try {
@@ -408,11 +419,19 @@ async function buildPreviewVideo() {
     showCanvas();
     friendlyVideoError(err);
   } finally {
-    els.download.disabled = false;
+    // If a newer render superseded us, that render owns the lock now.
+    if (seq === videoBuildSeq) {
+      setControlsLocked(false);
+      els.download.disabled = false;
+    }
   }
 }
 
 let videoDeferred = false; // text still being typed — rebuild on blur instead
+
+function setControlsLocked(locked) {
+  els.controlsPanel.classList.toggle('controls--locked', locked);
+}
 
 let pendingToken = 0;
 function schedulePreviewVideo() {
@@ -430,13 +449,15 @@ function renderPreview() {
 
   // Always keep a settled frame painted on the canvas so there's something
   // visible behind the video (during encode, on failure, and in image mode).
-  // Settle the preview frame at the midpoint so the text is fully visible
-  // (fade-in complete, fade-out not yet started).
+  // Image mode renders the plain static card (animation only affects video).
+  // In video mode settle the frame at the midpoint so the text is fully
+  // visible (fade-in complete, fade-out not yet started).
   const dur = previewDuration() * 1000;
   if (els.canvas.width !== w) els.canvas.width = w;
   if (els.canvas.height !== h) els.canvas.height = h;
   const ctx = els.canvas.getContext('2d');
-  draw(ctx, w, h, state(), dur / 2, dur);
+  const s = renderState();
+  draw(ctx, w, h, s, currentMode() === 'video' ? dur / 2 : 0);
 
   if (isVideoMode()) {
     if (videoDeferred) {
@@ -487,7 +508,7 @@ function exportImage() {
   els.canvas.width = w;
   els.canvas.height = h;
   const ctx = els.canvas.getContext('2d');
-  draw(ctx, w, h, state());
+  draw(ctx, w, h, renderState());
 
   const mime = els.imgFormat.value === 'image/jpeg' ? 'image/jpeg' : 'image/png';
   const ext = mime === 'image/jpeg' ? 'jpg' : 'png';
